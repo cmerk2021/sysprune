@@ -1,0 +1,589 @@
+# sysprune knowledge base.
+#
+# Format (documented in README.md):
+#   protected:            hard-locked patterns — never offered for disabling
+#     - pattern: <exact name or glob>
+#       reason:  <shown to the user>
+#       conditional: ssh | timesync | firewall   (optional special handling)
+#   entries:              friendly info + recommendations
+#     - match: <exact name or glob, matched against unit/desktop-file name>
+#       name:  <friendly name>
+#       description: <plain language, explain *why*>
+#       category: <hardware|desktop|network|system|apps|dev|power|print|...>
+#       recommend: keep | disable | think
+#       reason: <why this recommendation>
+#       conditions:       (optional, first matching condition wins)
+#         - type: dir_empty|dir_missing|file_missing|cmd_absent|file_exists
+#           path: <path>      (for dir_*/file_*)
+#           cmd:  <binary>    (for cmd_absent)
+#           recommend: keep|disable|think
+#           note: <hardware-aware note shown on the card>
+#
+# A user override file at ~/.config/sysprune/kb.yaml is merged over this one,
+# but user overrides can never remove protection entries.
+
+protected:
+  - pattern: "dbus*"
+    reason: "D-Bus is the message bus everything on a Linux desktop uses to talk. Disabling it breaks the entire session."
+  - pattern: "systemd-journald*"
+    reason: "The system logger. Required for diagnostics and by systemd itself."
+  - pattern: "systemd-logind*"
+    reason: "Manages user logins and seats. Disabling it locks you out of your session."
+  - pattern: "systemd-udevd*"
+    reason: "Manages device nodes. Required for hardware to work at all."
+  - pattern: "systemd-resolved*"
+    reason: "DNS resolution for the whole system on many distros."
+  - pattern: "systemd-timesyncd*"
+    reason: "Keeps the clock correct. A wrong clock breaks TLS, updates and logins."
+    conditional: timesync
+  - pattern: "systemd-tmpfiles*"
+    reason: "Creates and cleans required runtime files and directories at boot."
+  - pattern: "systemd-*"
+    reason: "Core systemd machinery. sysprune never touches systemd's own units."
+  - pattern: "NetworkManager*"
+    reason: "Your network connection. Disabling it takes you offline."
+  - pattern: "wpa_supplicant*"
+    reason: "Wi-Fi authentication. Required for wireless networking."
+  - pattern: "systemd-networkd*"
+    reason: "Network configuration daemon on server-style setups."
+  - pattern: "getty@*"
+    reason: "Text-console login. Your recovery path if the desktop breaks."
+  - pattern: "serial-getty@*"
+    reason: "Serial-console login, a recovery path on servers and VMs."
+  - pattern: "display-manager*"
+    reason: "Starts your graphical login screen."
+  - pattern: "gdm*"
+    reason: "GNOME's login screen. Disabling it means no graphical login."
+  - pattern: "sddm*"
+    reason: "KDE's login screen. Disabling it means no graphical login."
+  - pattern: "lightdm*"
+    reason: "The login screen. Disabling it means no graphical login."
+  - pattern: "polkit*"
+    reason: "Authorization service. Required for privileged desktop actions (and for sysprune's own pkexec fallback)."
+  - pattern: "udisks2*"
+    reason: "Disk and removable-media management for the desktop."
+  - pattern: "accounts-daemon*"
+    reason: "User account information for the login screen and settings."
+  - pattern: "upower*"
+    reason: "Battery and power state for the desktop. Laptops misbehave without it."
+  - pattern: "rtkit-daemon*"
+    reason: "Grants realtime priority to audio. Removing it causes audio glitches."
+  - pattern: "user@*"
+    reason: "Your per-user systemd instance — it runs your session services."
+  - pattern: "user-runtime-dir@*"
+    reason: "Sets up /run/user for your session."
+  - pattern: "sshd"
+    reason: "Remote login. Protected because losing it can lock you out of a remote machine."
+    conditional: ssh
+  - pattern: "ssh"
+    reason: "Remote login. Protected because losing it can lock you out of a remote machine."
+    conditional: ssh
+  - pattern: "auditd"
+    reason: "The security audit system. Often required by policy; disabling can even halt hardened systems."
+  - pattern: "apparmor*"
+    reason: "Mandatory access control. Part of your security posture."
+  - pattern: "selinux*"
+    reason: "Mandatory access control. Part of your security posture."
+  - pattern: "firewalld"
+    reason: "Your firewall. sysprune never disables firewalls."
+    conditional: firewall
+  - pattern: "ufw"
+    reason: "Your firewall. sysprune never disables firewalls."
+    conditional: firewall
+  - pattern: "nftables"
+    reason: "Your firewall rules. sysprune never disables firewalls."
+    conditional: firewall
+  - pattern: "cron"
+    reason: "Runs scheduled jobs that other software relies on."
+  - pattern: "crond"
+    reason: "Runs scheduled jobs that other software relies on."
+  - pattern: "pipewire*"
+    reason: "Your audio (and screen-sharing) server."
+  - pattern: "wireplumber*"
+    reason: "PipeWire's session manager. Audio routing breaks without it."
+  - pattern: "pulseaudio*"
+    reason: "Your audio server."
+  - pattern: "dconf*"
+    reason: "Settings storage used by the desktop session."
+  - pattern: "xdg-desktop-portal*"
+    reason: "Sandboxed-app and screen-sharing portal used by the desktop."
+
+entries:
+  - match: "bluetooth.service"
+    name: "Bluetooth"
+    description: "Runs the Bluetooth stack. Only needed if you use Bluetooth devices such as headphones, mice, or keyboards."
+    category: hardware
+    recommend: think
+    reason: "Easy to re-enable, but many desktops rely on it daily."
+    conditions:
+      - type: dir_empty
+        path: /sys/class/bluetooth
+        recommend: disable
+        note: "No Bluetooth hardware was detected on this machine."
+  - match: "blueman-applet*"
+    name: "Blueman applet"
+    description: "Tray applet for managing Bluetooth devices."
+    category: hardware
+    recommend: think
+    reason: "Only useful if you use Bluetooth."
+    conditions:
+      - type: dir_empty
+        path: /sys/class/bluetooth
+        recommend: disable
+        note: "No Bluetooth hardware was detected on this machine."
+  - match: "cups.service"
+    name: "Printing (CUPS)"
+    description: "The printing system. Only needed if you print documents from this machine."
+    category: print
+    recommend: think
+    reason: "Socket-activated on many distros, so its idle cost is small."
+    conditions:
+      - type: dir_missing
+        path: /etc/cups/ppd
+        recommend: disable
+        note: "No printers appear to be configured."
+  - match: "cups.socket"
+    name: "Printing socket (CUPS)"
+    description: "Starts the printing system on demand when something tries to print."
+    category: print
+    recommend: keep
+    reason: "Costs almost nothing while idle and makes printing 'just work'."
+  - match: "cups-browsed.service"
+    name: "Network printer discovery"
+    description: "Automatically discovers network printers. Only needed if you print to shared/network printers."
+    category: print
+    recommend: think
+    reason: "Safe to disable if you have no network printers; has had security advisories in the past."
+  - match: "ModemManager.service"
+    name: "Modem manager"
+    description: "Manages mobile broadband (3G/4G/5G) modems. Only needed if you use a cellular modem or SIM-slot laptop WWAN."
+    category: hardware
+    recommend: think
+    reason: "Pointless on desktops without a modem."
+    conditions:
+      - type: dir_empty
+        path: /sys/class/wwan
+        recommend: disable
+        note: "No WWAN/modem hardware was detected."
+  - match: "avahi-daemon.service"
+    name: "Network discovery (Avahi/mDNS)"
+    description: "Lets this machine find printers, file shares and other devices on the local network by name (the '.local' names)."
+    category: network
+    recommend: think
+    reason: "Disable if you never browse for devices on your LAN; keep if you use network printers or AirPlay-style discovery."
+  - match: "avahi-daemon.socket"
+    name: "Network discovery socket (Avahi)"
+    description: "On-demand activation for the Avahi discovery service."
+    category: network
+    recommend: think
+    reason: "Follows whatever you decide for avahi-daemon.service."
+  - match: "snapd.service"
+    name: "Snap package system"
+    description: "Runs Canonical's snap package system. Needed only if you have snap packages installed."
+    category: system
+    recommend: think
+    reason: "If you use snaps (common on Ubuntu), keep it. If snap list is empty, it is safe to disable."
+    conditions:
+      - type: dir_missing
+        path: /var/lib/snapd/snaps
+        recommend: disable
+        note: "No snap packages appear to be installed."
+  - match: "snapd.*"
+    name: "Snap package system (helper units)"
+    description: "Sockets, timers and mounts belonging to the snap package system."
+    category: system
+    recommend: think
+    reason: "Follows whatever you decide for snapd.service."
+  - match: "packagekit.service"
+    name: "PackageKit"
+    description: "Lets graphical software centers install and update packages. Started on demand."
+    category: system
+    recommend: keep
+    reason: "D-Bus activated; disabling it mostly just breaks GNOME Software/Discover."
+  - match: "apport.service"
+    name: "Ubuntu crash reporter (Apport)"
+    description: "Collects crash reports on Ubuntu and offers to send them to Canonical."
+    category: system
+    recommend: disable
+    reason: "Safe to disable if you don't submit crash reports; crashes still land in the system log."
+  - match: "whoopsie.service"
+    name: "Ubuntu error submission (whoopsie)"
+    description: "Uploads Apport crash reports to Ubuntu's servers."
+    category: system
+    recommend: disable
+    reason: "Only useful together with Apport crash reporting."
+  - match: "fwupd.service"
+    name: "Firmware updates (fwupd)"
+    description: "Checks for and installs firmware updates (UEFI, SSDs, docks, mice). Activated on demand."
+    category: system
+    recommend: keep
+    reason: "Firmware security updates matter, and the service is idle almost all the time."
+  - match: "fwupd-refresh.timer"
+    name: "Firmware metadata refresh"
+    description: "Periodically refreshes the list of available firmware updates."
+    category: system
+    recommend: keep
+    reason: "Cheap, and keeps firmware security updates visible."
+  - match: "colord.service"
+    name: "Color management"
+    description: "Manages monitor and printer color profiles. Started on demand by the desktop."
+    category: desktop
+    recommend: keep
+    reason: "D-Bus activated and idle; disabling can break display settings panels."
+  - match: "switcheroo-control.service"
+    name: "Dual-GPU switching"
+    description: "Lets the desktop offer 'Launch using dedicated GPU'. Only relevant on dual-GPU (hybrid graphics) machines."
+    category: hardware
+    recommend: think
+    reason: "Harmless but useless on single-GPU machines."
+  - match: "geoclue.service"
+    name: "Location service (GeoClue)"
+    description: "Provides approximate location to apps (weather, time zone, night light)."
+    category: desktop
+    recommend: think
+    reason: "Disable if you don't want apps to know your location; automatic time zone and night light lose accuracy."
+  - match: "tracker-*"
+    name: "GNOME file indexing (Tracker)"
+    description: "Indexes your files so GNOME search and some apps can find them instantly."
+    category: desktop
+    recommend: think
+    reason: "Disabling saves background I/O but breaks file search in GNOME apps."
+  - match: "localsearch*"
+    name: "GNOME file indexing (LocalSearch)"
+    description: "Indexes your files so GNOME search can find them instantly (successor of Tracker)."
+    category: desktop
+    recommend: think
+    reason: "Disabling saves background I/O but breaks file search in GNOME apps."
+  - match: "gnome-software-service.desktop"
+    name: "GNOME Software autostart"
+    description: "Keeps GNOME Software running in the background to check for updates and show notifications."
+    category: desktop
+    recommend: disable
+    reason: "Updates still work when you open GNOME Software manually; this only pre-loads it."
+  - match: "org.gnome.Software.desktop"
+    name: "GNOME Software autostart"
+    description: "Background update checks for GNOME Software."
+    category: desktop
+    recommend: disable
+    reason: "Updates still work when you open GNOME Software manually."
+  - match: "evolution-*"
+    name: "Evolution data services"
+    description: "Background services for calendars, contacts and mail used by GNOME (even if you never open Evolution)."
+    category: desktop
+    recommend: think
+    reason: "GNOME Calendar, clock-calendar integration and online accounts depend on these."
+  - match: "libvirtd.service"
+    name: "Virtual machines (libvirt)"
+    description: "Manages virtual machines (KVM/QEMU). Only needed if you run VMs with virt-manager, GNOME Boxes or similar."
+    category: dev
+    recommend: think
+    reason: "Disable if you don't run virtual machines on this computer."
+    conditions:
+      - type: dir_missing
+        path: /etc/libvirt/qemu
+        recommend: disable
+        note: "No libvirt virtual machines appear to be defined."
+  - match: "docker.service"
+    name: "Docker"
+    description: "The Docker container engine. Only needed if you run containers."
+    category: dev
+    recommend: think
+    reason: "If you use Docker, keep it (or make it socket-activated). Check 'docker ps -a' for existing containers before disabling."
+    conditions:
+      - type: dir_missing
+        path: /var/lib/docker/containers
+        recommend: disable
+        note: "No Docker containers appear to exist on this machine."
+  - match: "docker.socket"
+    name: "Docker socket"
+    description: "Starts Docker on demand when a client connects — a cheaper alternative to keeping docker.service running."
+    category: dev
+    recommend: keep
+    reason: "Socket activation is the efficient way to keep Docker available."
+  - match: "containerd.service"
+    name: "containerd"
+    description: "Container runtime used by Docker and Kubernetes."
+    category: dev
+    recommend: think
+    reason: "Needed when Docker runs; disable only together with Docker."
+  - match: "podman.socket"
+    name: "Podman socket"
+    description: "On-demand API socket for Podman containers."
+    category: dev
+    recommend: think
+    reason: "Only needed if something talks to the Podman API."
+  - match: "tlp.service"
+    name: "Laptop power saving (TLP)"
+    description: "Applies battery-friendly power settings on laptops."
+    category: power
+    recommend: keep
+    reason: "Saves real battery life on laptops; near-zero cost."
+  - match: "thermald.service"
+    name: "Thermal management (thermald)"
+    description: "Prevents Intel CPUs from overheating by proactive thermal management."
+    category: power
+    recommend: keep
+    reason: "Protects hardware; keep it on Intel machines."
+  - match: "power-profiles-daemon.service"
+    name: "Power profiles"
+    description: "Provides the Performance/Balanced/Power-saver switch in desktop settings."
+    category: power
+    recommend: keep
+    reason: "The desktop power menu depends on it."
+  - match: "NetworkManager-wait-online.service"
+    name: "Wait for network at boot"
+    description: "Delays boot until the network is up. Only needed by services that require the network immediately at boot."
+    category: network
+    recommend: disable
+    reason: "Commonly saves several seconds of boot time on desktops. sysprune checks nothing on your system depends on it first."
+  - match: "systemd-networkd-wait-online.service"
+    name: "Wait for network at boot (networkd)"
+    description: "Delays boot until systemd-networkd reports the network is up."
+    category: network
+    recommend: disable
+    reason: "Commonly saves boot time on desktops; dependency-checked first."
+  - match: "plymouth*"
+    name: "Boot splash screen (Plymouth)"
+    description: "Shows the graphical splash animation during boot and shutdown."
+    category: system
+    recommend: keep
+    reason: "Deeply integrated with the boot process; disabling units by hand can produce console flicker or hangs."
+  - match: "lvm2-monitor.service"
+    name: "LVM monitoring"
+    description: "Watches LVM volumes (snapshots, thin pools) for events. Only relevant if your disks use LVM."
+    category: system
+    recommend: think
+    reason: "Keep if your root filesystem is on LVM (very common on Fedora/RHEL)."
+  - match: "mdmonitor.service"
+    name: "RAID monitoring"
+    description: "Watches Linux software RAID (md) arrays and emails on failures."
+    category: system
+    recommend: think
+    reason: "Essential with software RAID; useless without it."
+    conditions:
+      - type: file_missing
+        path: /proc/mdstat
+        recommend: disable
+        note: "No software RAID arrays were detected."
+  - match: "smartd.service"
+    name: "Disk health monitoring (smartd)"
+    description: "Monitors disk S.M.A.R.T. health data and warns before disks fail."
+    category: system
+    recommend: keep
+    reason: "Early warning for failing disks is worth a tiny daemon."
+  - match: "fstrim.timer"
+    name: "SSD trim"
+    description: "Trims unused SSD blocks weekly, keeping SSD performance and lifetime healthy."
+    category: system
+    recommend: keep
+    reason: "Important for SSDs and costs nothing — it runs once a week."
+  - match: "anacron.timer"
+    name: "Anacron scheduler"
+    description: "Runs daily/weekly maintenance jobs that were missed while the machine was off."
+    category: system
+    recommend: keep
+    reason: "Other software relies on these catch-up jobs."
+  - match: "logrotate.timer"
+    name: "Log rotation"
+    description: "Rotates and compresses log files so they don't fill the disk."
+    category: system
+    recommend: keep
+    reason: "Prevents logs from eating your disk."
+  - match: "man-db.timer"
+    name: "Manual page index"
+    description: "Rebuilds the man-page search index daily."
+    category: system
+    recommend: think
+    reason: "Safe to disable; 'man -k' search may become stale."
+  - match: "updatedb.timer"
+    name: "locate database update"
+    description: "Rebuilds the database used by the 'locate' command."
+    category: system
+    recommend: think
+    reason: "Only needed if you use the locate/plocate command."
+  - match: "plocate-updatedb.timer"
+    name: "plocate database update"
+    description: "Rebuilds the database used by the 'locate' command."
+    category: system
+    recommend: think
+    reason: "Only needed if you use the locate/plocate command."
+  - match: "unattended-upgrades.service"
+    name: "Automatic security updates"
+    description: "Installs security updates automatically in the background (Debian/Ubuntu)."
+    category: system
+    recommend: keep
+    reason: "Automatic security updates are one of the best defaults in computing."
+  - match: "apt-daily*.timer"
+    name: "APT maintenance timers"
+    description: "Downloads package lists and security updates in the background."
+    category: system
+    recommend: keep
+    reason: "Required for automatic security updates to work."
+  - match: "dnf-makecache.timer"
+    name: "DNF metadata refresh"
+    description: "Refreshes Fedora package metadata in the background so updates are fast."
+    category: system
+    recommend: think
+    reason: "Safe to disable; 'dnf' will refresh metadata on demand instead."
+  - match: "rpc-statd*"
+    name: "NFS file locking"
+    description: "Lock manager for NFS network filesystems."
+    category: network
+    recommend: think
+    reason: "Only needed if you mount NFS shares."
+  - match: "nfs-*"
+    name: "NFS services"
+    description: "Services for mounting or serving NFS network filesystems."
+    category: network
+    recommend: think
+    reason: "Only needed if you use NFS."
+  - match: "smbd.service"
+    name: "Windows file sharing server (Samba)"
+    description: "Serves your files to Windows machines on the network."
+    category: network
+    recommend: think
+    reason: "Only needed if this machine shares folders over the network."
+  - match: "nmbd.service"
+    name: "Windows network naming (Samba)"
+    description: "NetBIOS name service for Windows-style network browsing."
+    category: network
+    recommend: think
+    reason: "Only needed together with Samba file sharing."
+  - match: "openvpn*"
+    name: "OpenVPN"
+    description: "Starts configured OpenVPN tunnels at boot."
+    category: network
+    recommend: think
+    reason: "Keep if you rely on an always-on VPN."
+  - match: "tailscaled.service"
+    name: "Tailscale VPN"
+    description: "Keeps your Tailscale mesh VPN connected."
+    category: network
+    recommend: think
+    reason: "Keep if you use Tailscale to reach this machine or others."
+  - match: "bolt.service"
+    name: "Thunderbolt security (bolt)"
+    description: "Authorizes Thunderbolt 3/4 devices. Started on demand when you plug one in."
+    category: hardware
+    recommend: keep
+    reason: "D-Bus activated and idle; needed for docks and eGPUs."
+  - match: "iio-sensor-proxy.service"
+    name: "Sensors (rotation, ambient light)"
+    description: "Reads accelerometer and light sensors for screen auto-rotation and brightness."
+    category: hardware
+    recommend: think
+    reason: "Useful on convertibles/tablets; useless on desktops without sensors."
+  - match: "spice-vdagentd.service"
+    name: "VM guest integration (SPICE)"
+    description: "Clipboard sharing and resolution syncing when this system runs inside a SPICE virtual machine."
+    category: system
+    recommend: think
+    reason: "Only useful when running inside a VM."
+  - match: "qemu-guest-agent.service"
+    name: "VM guest agent (QEMU)"
+    description: "Lets a host hypervisor manage this VM cleanly."
+    category: system
+    recommend: think
+    reason: "Only useful when running inside a QEMU/KVM VM."
+  - match: "steam.desktop"
+    name: "Steam autostart"
+    description: "Starts Steam minimized at login so games and friends lists load faster."
+    category: apps
+    recommend: disable
+    reason: "Steam works exactly the same when you launch it yourself; autostart costs memory at every login."
+  - match: "discord*.desktop"
+    name: "Discord autostart"
+    description: "Starts Discord at login."
+    category: apps
+    recommend: disable
+    reason: "Launch it when you need it; autostart costs memory at every login."
+  - match: "dropbox*.desktop"
+    name: "Dropbox autostart"
+    description: "Starts Dropbox syncing at login."
+    category: apps
+    recommend: think
+    reason: "Keep if you rely on continuous file sync; disable if you use Dropbox rarely."
+  - match: "spotify*.desktop"
+    name: "Spotify updater/autostart"
+    description: "Starts Spotify (or its updater) at login."
+    category: apps
+    recommend: disable
+    reason: "Spotify works the same when launched manually."
+  - match: "slack*.desktop"
+    name: "Slack autostart"
+    description: "Starts Slack at login."
+    category: apps
+    recommend: think
+    reason: "Keep if you need messages at login; otherwise launch it manually."
+  - match: "teams*.desktop"
+    name: "Microsoft Teams autostart"
+    description: "Starts Teams at login."
+    category: apps
+    recommend: think
+    reason: "Keep if you need calls/messages immediately after login."
+  - match: "zoom*.desktop"
+    name: "Zoom autostart"
+    description: "Starts Zoom in the background at login."
+    category: apps
+    recommend: disable
+    reason: "Zoom opens fine when you click a meeting link."
+  - match: "caffeine*.desktop"
+    name: "Caffeine"
+    description: "Prevents the screen from sleeping while apps are fullscreen."
+    category: desktop
+    recommend: think
+    reason: "Keep if you installed it on purpose."
+  - match: "nextcloud*.desktop"
+    name: "Nextcloud client autostart"
+    description: "Starts the Nextcloud sync client at login."
+    category: apps
+    recommend: think
+    reason: "Keep if you rely on continuous file sync."
+  - match: "insync*.desktop"
+    name: "Insync autostart"
+    description: "Starts the Insync Google-Drive client at login."
+    category: apps
+    recommend: think
+    reason: "Keep if you rely on continuous file sync."
+  - match: "solaar*.desktop"
+    name: "Solaar (Logitech devices)"
+    description: "Tray app for Logitech wireless mice and keyboards."
+    category: hardware
+    recommend: think
+    reason: "Only useful with Logitech Unifying devices."
+  - match: "kdeconnectd*"
+    name: "KDE Connect"
+    description: "Pairs your phone with the desktop for notifications and file sharing."
+    category: desktop
+    recommend: think
+    reason: "Keep if you use KDE Connect with your phone."
+  - match: "at-spi*"
+    name: "Accessibility bus"
+    description: "Accessibility support (screen readers, etc.) for the desktop session."
+    category: desktop
+    recommend: keep
+    reason: "Many toolkits expect it; the cost is tiny and disabling can break apps."
+  - match: "gnome-keyring*"
+    name: "GNOME Keyring"
+    description: "Stores your saved passwords, SSH keys and secrets for the session."
+    category: desktop
+    recommend: keep
+    reason: "Browsers, Wi-Fi and SSH ask it for your saved secrets."
+  - match: "update-notifier.desktop"
+    name: "Update notifier"
+    description: "Shows a notification when updates are available (Ubuntu)."
+    category: system
+    recommend: think
+    reason: "Safe to disable if you check for updates yourself."
+  - match: "im-launch.desktop"
+    name: "Input method launcher"
+    description: "Starts the input-method framework (needed for Chinese/Japanese/Korean and other complex input)."
+    category: desktop
+    recommend: keep
+    reason: "Required for non-Latin text input; harmless otherwise."
+  - match: "xdg-user-dirs*"
+    name: "User folders setup"
+    description: "Keeps your Documents/Downloads/Pictures folders and their translations up to date."
+    category: desktop
+    recommend: keep
+    reason: "Runs for a millisecond at login."
