@@ -1,0 +1,13 @@
+# Binaries
+/sysprune
+/dist/
+
+# Go
+*.test
+*.out
+coverage.*
+
+# Editors
+.idea/
+.vscode/
+*.swp
